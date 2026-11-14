@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mediacms
+    username: mediacms
+    password: mediacms
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update   # на старте для разработки; позже — Flyway
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+jwt:
+  secret: "change-me-to-a-long-random-string-at-least-32-bytes"
+  expiration-ms: 86400000   # 24 часа
+
+server:
+  port: 8080
