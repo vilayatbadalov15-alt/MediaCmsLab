@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediaCmsLab — редакция</title><link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><div class="bar"><a class="brand" href="/">MediaCmsLab</a><nav><a href="/swagger-ui/index.html">API</a><button id="account">Войти</button></nav></div></header>
+  <main>
+    <section class="lead"><div><p class="kicker">Медиапортал</p><h1>Лента публикаций</h1></div><button class="primary" id="create" hidden>Создать материал</button></section>
+    <p id="notice" role="status"></p>
+    <div class="columns"><section aria-label="Публикации"><div id="feed"></div>
+      <div class="pager"><button id="prev" hidden>Назад</button><button id="next" hidden>Далее</button></div></section>
+      <aside><h2>Популярное за день</h2><p class="muted">Топ-10 по просмотрам · UTC</p><ol id="ranking"></ol><p id="emptyRank">Здесь появятся открытые читателями материалы.</p></aside>
+    </div>
+  </main>
+  <dialog id="auth"><form id="authForm"><div class="dialogHead"><h2>Аккаунт</h2><button type="button" data-close aria-label="Закрыть">×</button></div>
+    <label>Электронная почта<input name="email" type="email" required autocomplete="username"></label>
+    <label>Пароль<input name="password" type="password" required autocomplete="current-password"></label>
+    <p role="alert"></p><div class="actions"><button class="primary" value="login">Войти</button><button value="register">Регистрация читателя</button></div>
+  </form></dialog>
+  <dialog id="entry"><div class="dialogHead"><span id="detailType" class="kicker"></span><button data-close aria-label="Закрыть">×</button></div>
+    <h2 id="detailTitle"></h2><p id="byline" class="muted"></p><p id="detailDescription"></p><p id="detailBody"></p>
+    <a id="mediaLink" target="_blank" rel="noopener noreferrer" hidden>Открыть медиафайл ↗</a><ol id="episodeList"></ol>
+    <p id="viewCount" class="muted"></p><p role="alert"></p><div class="actions"><button id="edit" hidden>Изменить</button><button id="remove" hidden>Удалить</button></div>
+  </dialog>
+  <dialog id="editor"><form id="contentForm"><div class="dialogHead"><h2 id="editorTitle">Новый материал</h2><button type="button" data-close aria-label="Закрыть">×</button></div>
+    <label>Формат<select name="type"><option value="ARTICLE">Статья</option><option value="VIDEO">Видео</option><option value="PODCAST">Подкаст</option></select></label>
+    <label>Заголовок<input name="title" maxlength="255" required></label>
+    <label>Описание<textarea name="description" rows="2"></textarea></label>
+    <label data-types="ARTICLE AUDIO IMAGE">Текст или содержимое<textarea name="body" rows="4"></textarea></label>
+    <label data-types="VIDEO PODCAST">Ссылка на медиафайл<input name="mediaUrl" type="url" placeholder="https://"></label>
+    <label data-types="VIDEO">Длительность в секундах<input name="durationSeconds" type="number" min="1" step="1"></label>
+    <label data-types="PODCAST">Эпизоды, каждый с новой строки<textarea name="episodes" rows="3"></textarea></label>
+    <label>Статус<select name="status"><option value="PUBLISHED">Опубликован</option><option value="DRAFT">Черновик</option><option value="ARCHIVED">Архив</option></select></label>
+    <p role="alert"></p><button class="primary">Сохранить</button>
+  </form></dialog>
+</body>
+</html>

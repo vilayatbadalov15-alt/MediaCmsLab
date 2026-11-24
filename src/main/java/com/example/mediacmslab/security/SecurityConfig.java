@@ -1,5 +1,6 @@
 package com.example.mediacmslab.security;
 
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,23 +28,17 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // Регистрация и логин доступны всем
-                        .requestMatchers("/api/auth/**").permitAll()
-                        // Чтение контента доступно всем (или можно ограничить USER)
-                        .requestMatchers(HttpMethod.GET, "/api/content/**").permitAll()
-                        // Создание/редактирование только для EDITOR и ADMIN
-                        .requestMatchers(HttpMethod.POST, "/api/content/**").hasAnyRole("EDITOR", "ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/content/**").hasAnyRole("EDITOR", "ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/content/**").hasAnyRole("EDITOR", "ADMIN")
-                        .requestMatchers("/api/content/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
-                        // Рекомендации только для авторизованных
-                        .requestMatchers("/api/recommendations/**").authenticated()
-                        // Аналитика только для EDITOR/ADMIN
-                        .requestMatchers("/api/analytics/**").hasAnyRole("EDITOR", "ADMIN")
-                        // Остальное требует авторизации
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/", "/index.html", "/app.js", "/style.css",
+                                "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**",
+                                "/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
+                                "/api/content/*/view").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/content/**", "/api/recommendations/top").permitAll()
+                        .requestMatchers("/api/content/**", "/api/analytics/**").hasAnyRole("EDITOR", "ADMIN")
                         .anyRequest().authenticated()
                 )
+                .exceptionHandling(errors -> errors.authenticationEntryPoint((req, res, error) -> res.sendError(401)))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

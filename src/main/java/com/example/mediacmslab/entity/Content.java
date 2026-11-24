@@ -2,8 +2,10 @@ package com.example.mediacmslab.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -25,7 +27,18 @@ public class Content {
     private ContentType type;
 
     @Column(columnDefinition = "TEXT")
-    private String body;   // текст или URL медиа
+    private String body;
+
+    @Column(columnDefinition = "TEXT")
+    private String mediaUrl;
+    private Integer durationSeconds;
+    private Instant publishedAt;
+
+    @ElementCollection
+    @CollectionTable(name = "podcast_episodes", joinColumns = @JoinColumn(name = "content_id"))
+    @OrderColumn(name = "episode_position")
+    @Column(name = "title", nullable = false)
+    private List<String> episodes;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -41,6 +54,7 @@ public class Content {
             joinColumns = @JoinColumn(name = "content_id"),
             inverseJoinColumns = @JoinColumn(name = "tag_id")
     )
+    @Builder.Default
     private Set<Tag> tags = new HashSet<>();
 
     @Column(nullable = false)
@@ -49,6 +63,6 @@ public class Content {
     @Column(nullable = false)
     private Instant updatedAt;
 
-    public enum ContentType { ARTICLE, VIDEO, AUDIO, IMAGE }
+    public enum ContentType { ARTICLE, VIDEO, PODCAST, AUDIO, IMAGE }
     public enum Status { DRAFT, PUBLISHED, ARCHIVED }
 }
