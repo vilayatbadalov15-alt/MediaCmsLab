@@ -1,35 +1,39 @@
-HELP.md
-target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+# Build outputs and caches
+/.gradle/
+/build/
+/out/
+/target/
+*.class
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+/.aws/
+/.agents/
+/.codex/
 
-### IntelliJ IDEA ###
-.idea
+# IDE workspaces
+.idea/
 *.iws
 *.iml
 *.ipr
-
-### NetBeans ###
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated/
+.springBeans
+.sts4-cache/
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
-### VS Code ###
-.vscode/
-.gradle/
-.env
+# Runtime diagnostics and OS metadata
+*.log
+*.hprof
+.DS_Store
+Thumbs.db
