@@ -16,6 +16,9 @@ public class Content {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    private long revision;
+
     @Column(nullable = false)
     private String title;
 

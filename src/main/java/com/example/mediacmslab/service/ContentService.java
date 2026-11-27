@@ -8,7 +8,6 @@ import com.example.mediacmslab.repository.ContentRepository;
 import com.example.mediacmslab.repository.TagRepository;
 import com.example.mediacmslab.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -22,6 +21,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -51,31 +52,48 @@ public class ContentService {
     public Page<ContentResponse> getAll(Pageable pageable, String email, boolean admin) {
         var page = admin ? contentRepository.findAll(pageable)
                 : contentRepository.findByStatusOrAuthor_Email(Content.Status.PUBLISHED, email, pageable);
+        fetchCollections(page.getContent());
         return page.map(ContentService::mapToResponse);
     }
 
-    @Cacheable(cacheNames = "content", key = "#id")
-    public ContentResponse getById(Long id) {
+    private void fetchCollections(List<Content> rows) {
+        if (!rows.isEmpty()) {
+            contentRepository.fetchTags(rows);
+            contentRepository.fetchEpisodes(rows);
+        }
+    }
+
+    public List<ContentResponse> getPublishedInOrder(List<Long> ids) {
+        var rows = contentRepository.findByIdInAndStatus(ids, Content.Status.PUBLISHED);
+        fetchCollections(rows);
+        var byId = rows.stream().collect(Collectors.toMap(Content::getId, Function.identity()));
+        return ids.stream().map(byId::get).filter(Objects::nonNull).map(ContentService::mapToResponse).toList();
+    }
+
+    public long revision(Long id) {
+        return contentRepository.findRevision(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+    }
+
+    @Cacheable(cacheNames = "content", key = "#id + ':' + #revision")
+    public ContentResponse getById(Long id, long revision) {
         return mapToResponse(find(id));
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "content", key = "#id")
     public ContentResponse update(Long id, ContentRequest request, String email, boolean admin) {
         Content content = editable(id, email, admin);
         apply(content, request);
-        if (content.getStatus() != Content.Status.PUBLISHED) events.publishEvent(new Withdrawn(id, false));
+        events.publishEvent(new VisibilityChanged(id, content.getStatus() == Content.Status.PUBLISHED, false));
         return mapToResponse(content);
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "content", key = "#id")
     public void delete(Long id, String email, boolean admin) {
         contentRepository.delete(editable(id, email, admin));
-        events.publishEvent(new Withdrawn(id, true));
+        events.publishEvent(new VisibilityChanged(id, false, true));
     }
 
-    record Withdrawn(Long id, boolean deleted) {}
+    record VisibilityChanged(Long id, boolean published, boolean deleted) {}
 
     private Content find(Long id) {
         return contentRepository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));

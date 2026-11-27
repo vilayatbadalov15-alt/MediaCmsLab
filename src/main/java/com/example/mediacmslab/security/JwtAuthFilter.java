@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -14,10 +16,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
+
+    static final PathPatternRequestMatcher VIEW = PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/api/content/*/view");
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
@@ -42,14 +47,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
-            if (jwtService.isTokenValid(jwt, userDetails)) {
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities()
-                );
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            UsernamePasswordAuthenticationToken authToken;
+            if (VIEW.matches(request)) {
+                // The public view endpoint uses only the signed subject to count daily readers.
+                authToken = UsernamePasswordAuthenticationToken.authenticated(userEmail, null, List.of());
+            } else {
+                UserDetails user = userDetailsService.loadUserByUsername(userEmail);
+                authToken = UsernamePasswordAuthenticationToken.authenticated(user, null, user.getAuthorities());
             }
+            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            SecurityContextHolder.getContext().setAuthentication(authToken);
         }
         filterChain.doFilter(request, response);
     }

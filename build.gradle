@@ -18,7 +18,7 @@ def bootBom = org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDI
 dependencies {
     implementation platform(bootBom)
     annotationProcessor platform(bootBom)
-    for (starter in ['webmvc', 'validation', 'data-jpa', 'data-redis', 'cache', 'security', 'actuator']) {
+    for (starter in ['webmvc', 'validation', 'data-jpa', 'data-redis', 'cache', 'security', 'actuator', 'flyway']) {
         implementation "org.springframework.boot:spring-boot-starter-${starter}"
     }
     implementation 'io.micrometer:micrometer-registry-prometheus'
@@ -27,6 +27,7 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

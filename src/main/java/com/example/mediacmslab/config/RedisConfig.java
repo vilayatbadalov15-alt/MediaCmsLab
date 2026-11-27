@@ -1,15 +1,16 @@
 package com.example.mediacmslab.config;
 
-import org.springframework.boot.cache.autoconfigure.RedisCacheManagerBuilderCustomizer;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
-import org.springframework.context.annotation.Bean;
+import org.springframework.cache.interceptor.CacheErrorHandler;
+import org.springframework.cache.interceptor.LoggingCacheErrorHandler;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @EnableCaching
-public class RedisConfig {
-    @Bean
-    RedisCacheManagerBuilderCustomizer afterCommitEvictions() {
-        return builder -> builder.transactionAware();
+public class RedisConfig implements CachingConfigurer {
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new LoggingCacheErrorHandler();
     }
 }

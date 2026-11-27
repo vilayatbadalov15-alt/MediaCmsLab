@@ -14,7 +14,9 @@ async function api(path, method = 'GET', body) {
   if (!response.ok) {
     const errors = {400: 'Проверьте поля формы.', 401: 'Требуется вход. Проверьте почту и пароль.',
       403: 'Недостаточно прав.', 404: 'Материал недоступен.', 409: 'Эта почта уже зарегистрирована.'};
-    throw new Error(errors[response.status] || 'Запрос завершился с ошибкой ' + response.status);
+    const error = new Error(errors[response.status] || 'Запрос завершился с ошибкой ' + response.status);
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -49,7 +51,15 @@ function metadata(item) {
 }
 
 async function refreshRank() {
-  const top = await api('/api/recommendations/top');
+  let top;
+  try {
+    top = await api('/api/recommendations/top');
+    $('emptyRank').textContent = 'Здесь появятся открытые читателями материалы.';
+  } catch (error) {
+    if (error.status !== 503) throw error;
+    top = [];
+    $('emptyRank').textContent = 'Рейтинг временно недоступен.';
+  }
   $('emptyRank').hidden = top.length > 0;
   $('ranking').replaceChildren(...top.map(item => {
     const li = document.createElement('li');
@@ -91,9 +101,14 @@ async function openItem(id) {
   $('edit').hidden = $('remove').hidden = !editable;
   show('entry');
   if (item.status === 'PUBLISHED') {
-    const count = await api('/api/content/' + id + '/view', 'POST');
+    let count;
+    try {
+      count = await api('/api/content/' + id + '/view', 'POST');
+    } catch (error) {
+      if (error.status !== 503) throw error;
+    }
     if (current?.id === id) {
-      const stats = ['Просмотры за всё время: ' + count];
+      const stats = [count == null ? 'Статистика временно недоступна' : 'Просмотры за всё время: ' + count];
       if (item.durationSeconds) stats.push('Длительность: ' + item.durationSeconds + ' с');
       $('viewCount').textContent = stats.join(' · ');
     }

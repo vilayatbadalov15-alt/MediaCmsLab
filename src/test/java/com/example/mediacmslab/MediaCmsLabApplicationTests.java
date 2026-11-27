@@ -3,6 +3,7 @@ package com.example.mediacmslab;
 import com.example.mediacmslab.dto.ContentRequest;
 import com.example.mediacmslab.entity.Content;
 import com.example.mediacmslab.service.ContentService;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,21 +19,29 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "jwt.secret=local-integration-test-signing-key-for-mediacms",
-        "demo.editor.password=editor-password"
+        "demo.editor.password=editor-password",
+        "spring.jpa.properties.hibernate.generate_statistics=true"
 })
 class MediaCmsLabApplicationTests {
     @Container
@@ -41,7 +50,17 @@ class MediaCmsLabApplicationTests {
             .withEnv("POSTGRES_PASSWORD", "mediacms").withExposedPorts(5432)
             .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*", 2));
     @Container
-    static final GenericContainer<?> redisServer = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+    static final GenericContainer<?> redisServer = new GenericContainer<>("redis:7-alpine")
+            .withCommand("redis-server", "--cluster-enabled", "yes").withExposedPorts(6379);
+
+    @BeforeAll
+    static void assignClusterSlots() throws Exception {
+        // A single test primary owns all slots but Redis still enforces CROSSSLOT on EVAL.
+        assertThat(redisServer.execInContainer("redis-cli", "-e", "CLUSTER", "ADDSLOTSRANGE", "0", "16383")
+                .getExitCode()).isZero();
+        await().atMost(Duration.ofSeconds(15)).until(() -> redisServer
+                .execInContainer("redis-cli", "CLUSTER", "INFO").getStdout().contains("cluster_state:ok"));
+    }
 
     @DynamicPropertySource
     static void configure(DynamicPropertyRegistry props) {
@@ -53,6 +72,7 @@ class MediaCmsLabApplicationTests {
 
     @LocalServerPort int port;
     @Autowired ContentService contents;
+    @Autowired EntityManagerFactory entityManagerFactory;
     @Autowired TransactionTemplate transaction;
     @Autowired ObjectMapper json;
     @Autowired StringRedisTemplate redis;
@@ -104,11 +124,11 @@ class MediaCmsLabApplicationTests {
         String id = saved.get("id").asString();
         String path = root + "/" + id;
         assertThat(data("GET", path, null, null, 200).get("body").asString()).isEqualTo("Первый выпуск");
-        assertThat(redis.getExpire("content::" + id)).isBetween(1L, 300L);
+        assertThat(redis.getExpire("content::" + id + ":0")).isBetween(1L, 300L);
         var video = Map.of("type", "VIDEO", "status", "DRAFT", "title", "Интервью",
                 "mediaUrl", "https://example.org/v.mp4", "durationSeconds", 90);
         data("PUT", path, token, video, 200);
-        assertThat(redis.hasKey("content::" + id)).isFalse();
+        assertThat(redis.hasKey("content::" + id + ":1")).isFalse();
         request("GET", path, null, null, 404);
         request("POST", path + "/view", null, null, 404);
         assertThat(data("GET", path, token, null, 200).get("durationSeconds").asInt()).isEqualTo(90);
@@ -149,11 +169,11 @@ class MediaCmsLabApplicationTests {
         assertThat(data("GET", "/api/recommendations/top", null, null, 200).get(0).get("id").asString()).isEqualTo(first);
         assertThat(data("GET", "/api/analytics/top", token, null, 200).get(1).asString()).isEqualTo(second);
         assertThat(request("GET", "/api/analytics/dau", token, null, 200)).isEqualTo("1");
-        String key = "analytics:top:views:" + LocalDate.now(ZoneOffset.UTC);
+        String key = "{analytics}:top:views:" + LocalDate.now(ZoneOffset.UTC);
         assertThat(redis.opsForZSet().score(key, first)).isEqualTo(2);
         assertThat(redis.getExpire(key)).isBetween(1L, 172800L);
         request("DELETE", "/api/content/" + first, token, null, 204);
-        assertThat(redis.hasKey("analytics:views:content:" + first)).isFalse();
+        assertThat(redis.hasKey("{analytics}:views:content:" + first)).isFalse();
         assertThat(data("GET", "/api/recommendations/top", null, null, 200).size()).isEqualTo(1);
     }
 
@@ -172,6 +192,61 @@ class MediaCmsLabApplicationTests {
             tx.setRollbackOnly();
         });
         assertThat(creations()).isEqualTo(before);
+    }
+
+    @Test
+    void pageUsesBoundedQueriesAndWarmViewsDoNotQueryPostgres() throws Exception {
+        String token = editor();
+        var podcast = Map.of("type", "PODCAST", "status", "PUBLISHED", "title", "Репортаж",
+                "mediaUrl", "https://example.org/audio", "episodes", List.of("Начало", "Финал"),
+                "tags", List.of("медиа", "репортаж"));
+        for (int i = 0; i < 5; i++) data("POST", "/api/content", token, podcast, 201);
+        var stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        var pageable = PageRequest.of(0, 4, Sort.by(Sort.Direction.DESC, "id"));
+        for (boolean admin : List.of(true, false)) {
+            stats.clear();
+            var page = contents.getAll(pageable, null, admin);
+            assertThat(page.getContent()).hasSize(4).allSatisfy(item -> {
+                assertThat(item.getEpisodes()).containsExactly("Начало", "Финал");
+                assertThat(item.getTags()).containsExactlyInAnyOrder("медиа", "репортаж");
+            });
+            assertThat(stats.getPrepareStatementCount()).isEqualTo(4);
+        }
+        String id = createArticle(token, "Без блокировки");
+        String path = "/api/content/" + id;
+        request("POST", path + "/view", null, null, 200);
+        stats.clear();
+        assertThat(request("POST", path + "/view", null, null, 200)).isEqualTo("2");
+        assertThat(request("POST", path + "/view", token, null, 200)).isEqualTo("3");
+        assertThat(stats.getPrepareStatementCount()).isZero();
+        request("DELETE", path, token, null, 204);
+    }
+
+    @Test
+    void redisOutagePreservesCrudAndRestoredCacheCannotExposeWithdrawnContent() throws Exception {
+        String token = editor();
+        String id = createArticle(token, "Доступна без кеша");
+        String path = "/api/content/" + id;
+        request("GET", path, null, null, 200);
+        // Stop only the isolated test Redis process, leaving its memory and port intact.
+        redisServer.getDockerClient().pauseContainerCmd(redisServer.getContainerId()).exec();
+        try {
+            assertThat(request("GET", "/actuator/health/readiness", null, null, 200)).contains("UP");
+            assertThat(request("GET", path, null, null, 200)).contains("Доступна без кеша");
+            request("GET", "/api/recommendations/top", null, null, 503);
+            request("POST", path + "/view", null, null, 503);
+            var draft = Map.of("type", "ARTICLE", "title", "Черновик", "status", "DRAFT", "body", "Текст");
+            request("PUT", path, token, draft, 200);
+            request("GET", path, null, null, 404);
+            request("GET", path, token, null, 200);
+            String other = createArticle(token, "Сохранено во время сбоя");
+            request("DELETE", "/api/content/" + other, token, null, 204);
+            assertThat(request("GET", "/api/content", null, null, 200)).doesNotContain("Черновик");
+        } finally {
+            redisServer.getDockerClient().unpauseContainerCmd(redisServer.getContainerId()).exec();
+        }
+        request("GET", path, null, null, 404);
+        request("POST", path + "/view", null, null, 404);
     }
 
     @Test

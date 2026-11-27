@@ -31,9 +31,9 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/", "/index.html", "/app.js", "/style.css",
                                 "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**",
-                                "/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
-                                "/api/content/*/view").permitAll()
+                                "/actuator/health", "/actuator/health/readiness", "/actuator/health/liveness", "/actuator/info", "/actuator/prometheus").permitAll()
+                        .requestMatchers(JwtAuthFilter.VIEW).permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/content/**", "/api/recommendations/top").permitAll()
                         .requestMatchers("/api/content/**", "/api/analytics/**").hasAnyRole("EDITOR", "ADMIN")
                         .anyRequest().authenticated()

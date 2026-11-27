@@ -21,10 +21,29 @@ docker compose up --build -d
 | --- | --- |
 | Java 21, Spring Boot, PostgreSQL | Статья хранит текст, автора и дату публикации, видео — URL и длительность в секундах, подкаст — URL аудио и упорядоченные эпизоды. Spring Security проверяет JWT. Редактор управляет своими материалами, администратор — всеми. Гостям видны опубликованные материалы. |
 | Redis | При открытии публикации `INCR` увеличивает общий счётчик, `ZINCRBY` обновляет дневной рейтинг. Топ-10 охватывает все форматы за календарный день по UTC. HyperLogLog оценивает число авторизованных читателей за день. Дневные ключи живут 48 часов после последнего просмотра. |
-| Spring Cache | `GET /api/content/{id}` кеширует карточку на 5 минут. После редактирования или удаления запись кеша сбрасывается. |
+| Spring Cache | `GET /api/content/{id}` кеширует карточку на 5 минут. Ключ включает ревизию из PostgreSQL: после изменения читается новая версия, а после удаления API отвечает 404. Старые версии истекают по TTL. |
 | Actuator и Prometheus | Доступны [health](http://localhost:8080/actuator/health), [info](http://localhost:8080/actuator/info) и [метрики](http://localhost:8080/actuator/prometheus). Счётчик `messages_created_total` увеличивается после фиксации новой записи контента. Логи приложения в JSON выводит `docker compose logs --no-log-prefix app`. |
 
 Контроллеры принимают HTTP-запросы, сервисы проверяют права владельца и управляют транзакциями, репозитории сохраняют материалы. Поля запросов и операции доступны в [Swagger UI](http://localhost:8080/swagger-ui/index.html) и [OpenAPI JSON](http://localhost:8080/v3/api-docs). Для защищённых операций получите `token` через `POST /api/auth/login` и вставьте его в **Authorize**.
+
+## Хранение и отказ Redis
+
+Flyway создаёт схему при первом запуске и обновляет существующие таблицы. Hibernate проверяет схему в режиме `validate`. Для базы предыдущей версии Flyway фиксирует исходную версию 1 и применяет V2, сохраняя публикации, пользователей и эпизоды.
+
+Если Redis недоступен, карточки читаются из PostgreSQL, лента и редактирование продолжают работать. Рейтинг, DAU и регистрация просмотра возвращают HTTP 503. Интерфейс показывает материал с пометкой о недоступной статистике. Пропущенные просмотры задним числом не восстанавливаются. Для проверки готовности приложения используйте `/actuator/health/readiness` (PostgreSQL), для диагностики всех зависимостей — `/actuator/health`.
+
+Просмотр проверяет признак публикации в Redis. При промахе сервис проверяет статус в PostgreSQL обычным SELECT и кеширует результат успешной проверки на 30 секунд. Повторные просмотры выполняются одним Lua-скриптом. После изменения статуса приложение обновляет признак. Если уведомление потерялось при сбое Redis, прежний признак может влиять на учёт просмотров до конца TTL. При выдаче карточек и рекомендаций доступность материала определяется по PostgreSQL.
+
+Для Redis Cluster задайте `SPRING_DATA_REDIS_CLUSTER_NODES` (список узлов через запятую). Ключи статистики используют общий hash tag `{analytics}`: Redis выполняет изменение счётчика, рейтинга и DAU атомарно в одном слоте. Нагрузку этого рейтинга обслуживает один primary.
+
+**Обновление со старой версии.** Перед первым запуском новой версии на прежнем standalone Redis остановите всех писателей статистики и перенесите ключи. Скрипт сохраняет значения и оставшийся TTL, допускает повторный запуск и останавливается при конфликте имён.
+
+```bash
+docker compose build app
+docker compose stop app
+docker compose exec -T redis sh -s < scripts/migrate-redis-keys.sh
+docker compose up -d
+```
 
 ## Демонстрация за 4 минуты
 
@@ -40,9 +59,11 @@ docker compose up --build -d
 Вместо `ID` подставьте идентификатор статьи из первого вызова. Рейтинг меняется при открытии материала, чтение ленты просмотры не начисляет.
 
 ```bash
-docker compose exec -T redis redis-cli ZREVRANGE "analytics:top:views:$(date -u +%F)" 0 9 WITHSCORES
-docker compose exec -T redis redis-cli TTL content::ID
-docker compose exec -T redis redis-cli GET analytics:views:content:ID
+docker compose exec -T redis redis-cli ZREVRANGE "{analytics}:top:views:$(date -u +%F)" 0 9 WITHSCORES
+docker compose exec -T redis redis-cli --scan --pattern "content::ID:*"
+# Подставьте найденный ключ с актуальной ревизией
+docker compose exec -T redis redis-cli TTL "content::ID:REV"
+docker compose exec -T redis redis-cli GET "{analytics}:views:content:ID"
 ```
 
 ## Сборка и проверка

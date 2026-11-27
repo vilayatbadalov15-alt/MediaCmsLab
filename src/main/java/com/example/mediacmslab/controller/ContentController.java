@@ -34,7 +34,7 @@ public class ContentController {
 
     @GetMapping("/{id}")
     public ContentResponse getById(@PathVariable Long id, Authentication auth) {
-        ContentResponse content = contentService.getById(id);
+        ContentResponse content = contentService.getById(id, contentService.revision(id));
         if (content.getStatus() != Content.Status.PUBLISHED &&
                 !content.getAuthorEmail().equals(email(auth)) && !isAdmin(auth)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
